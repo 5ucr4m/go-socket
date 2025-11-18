@@ -1,5 +1,6 @@
 # Binários Go
 bin/
+main
 *.exe
 *.exe~
 *.dll

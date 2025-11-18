@@ -8,7 +8,7 @@ type Hub struct {
 	clients map[*Client]bool
 
 	// Mensagens de broadcast para todos os clientes
-	broadcast chan []byte
+	broadcast chan *Message
 
 	// Registrar novos clientes
 	register chan *Client
@@ -20,7 +20,7 @@ type Hub struct {
 // NewHub cria uma nova instância do Hub
 func NewHub() *Hub {
 	return &Hub{
-		broadcast:  make(chan []byte),
+		broadcast:  make(chan *Message),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		clients:    make(map[*Client]bool),
@@ -49,10 +49,17 @@ func (h *Hub) Run() {
 			}
 
 		case message := <-h.broadcast:
-			log.Printf("Broadcasting para %d clientes: %s", len(h.clients), message)
+			// Serializa a mensagem para JSON
+			jsonData, err := message.ToJSON()
+			if err != nil {
+				log.Printf("Erro ao serializar mensagem: %v", err)
+				continue
+			}
+
+			log.Printf("Broadcasting para %d clientes: %s", len(h.clients), jsonData)
 			for client := range h.clients {
 				select {
-				case client.send <- message:
+				case client.send <- jsonData:
 				default:
 					// Cliente não consegue receber, remover
 					close(client.send)

@@ -1,6 +1,14 @@
 import { useState, useEffect, useRef, FormEvent } from 'react'
 import './App.css'
 
+// Interface para a estrutura de mensagem WebSocket
+interface WebSocketMessage {
+  payload: any // pode ser string ou objeto serializado
+  user?: any // informações do usuário (opcional)
+  metadata?: any // informações adicionais (opcional)
+}
+
+// Interface para mensagens da UI
 interface Message {
   type: 'sent' | 'received' | 'system' | 'error'
   text: string
@@ -44,11 +52,39 @@ function App() {
 
     ws.onmessage = (event) => {
       console.log('📩 Mensagem recebida:', event.data)
-      setMessages(prev => [...prev, {
-        type: 'received',
-        text: event.data,
-        timestamp: new Date().toISOString()
-      }])
+
+      try {
+        // Desserializa a mensagem JSON
+        const wsMessage: WebSocketMessage = JSON.parse(event.data)
+
+        // Extrai o texto do payload
+        let messageText = ''
+        if (typeof wsMessage.payload === 'string') {
+          try {
+            // Tenta parsear se for um JSON serializado
+            const payloadObj = JSON.parse(wsMessage.payload)
+            messageText = payloadObj.text || JSON.stringify(payloadObj)
+          } catch {
+            // Se não for JSON, usa como string simples
+            messageText = wsMessage.payload
+          }
+        } else {
+          messageText = JSON.stringify(wsMessage.payload)
+        }
+
+        setMessages(prev => [...prev, {
+          type: 'received',
+          text: messageText,
+          timestamp: new Date().toISOString()
+        }])
+      } catch (error) {
+        console.error('❌ Erro ao processar mensagem:', error)
+        setMessages(prev => [...prev, {
+          type: 'error',
+          text: 'Erro ao processar mensagem',
+          timestamp: new Date().toISOString()
+        }])
+      }
     }
 
     ws.onerror = (error) => {
@@ -82,12 +118,30 @@ function App() {
       return
     }
 
-    const message = `${username}: ${inputMessage}`
-    wsRef.current.send(message)
+    // Cria a estrutura de mensagem padronizada
+    const wsMessage: WebSocketMessage = {
+      payload: JSON.stringify({
+        text: inputMessage,
+        author: username
+      }),
+      user: JSON.stringify({
+        username: username,
+        timestamp: new Date().toISOString()
+      }),
+      metadata: JSON.stringify({
+        type: 'chat',
+        clientTimestamp: new Date().toISOString()
+      })
+    }
 
+    // Serializa para JSON e envia
+    wsRef.current.send(JSON.stringify(wsMessage))
+
+    // Adiciona à UI local
+    const displayMessage = `${username}: ${inputMessage}`
     setMessages(prev => [...prev, {
       type: 'sent',
-      text: message,
+      text: displayMessage,
       timestamp: new Date().toISOString()
     }])
 
