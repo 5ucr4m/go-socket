@@ -68,7 +68,7 @@ func (c *Client) readPump() {
 	})
 
 	for {
-		_, message, err := c.conn.ReadMessage()
+		_, rawMessage, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("erro: %v", err)
@@ -76,7 +76,14 @@ func (c *Client) readPump() {
 			break
 		}
 
-		log.Printf("Mensagem recebida: %s", message)
+		log.Printf("Mensagem recebida: %s", rawMessage)
+
+		// Desserializa a mensagem JSON
+		message, err := FromJSON(rawMessage)
+		if err != nil {
+			log.Printf("Erro ao desserializar mensagem: %v", err)
+			continue
+		}
 
 		// Envia mensagem para o hub fazer broadcast
 		c.hub.broadcast <- message
