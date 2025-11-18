@@ -1,14 +1,20 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, FormEvent } from 'react'
 import './App.css'
 
+interface Message {
+  type: 'sent' | 'received' | 'system' | 'error'
+  text: string
+  timestamp: string
+}
+
 function App() {
-  const [messages, setMessages] = useState([])
+  const [messages, setMessages] = useState<Message[]>([])
   const [inputMessage, setInputMessage] = useState('')
   const [isConnected, setIsConnected] = useState(false)
   const [username, setUsername] = useState('')
   const [isUsernameSet, setIsUsernameSet] = useState(false)
-  const wsRef = useRef(null)
-  const messagesEndRef = useRef(null)
+  const wsRef = useRef<WebSocket | null>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Auto scroll para a última mensagem
   const scrollToBottom = () => {
@@ -69,7 +75,7 @@ function App() {
     }
   }, [isUsernameSet])
 
-  const sendMessage = (e) => {
+  const sendMessage = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
     if (!inputMessage.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -88,7 +94,7 @@ function App() {
     setInputMessage('')
   }
 
-  const handleUsernameSubmit = (e) => {
+  const handleUsernameSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (username.trim()) {
       setIsUsernameSet(true)
