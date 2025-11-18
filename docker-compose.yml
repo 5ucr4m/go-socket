@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  # Redis - Pub/Sub e Streams
+  redis:
+    image: redis:7-alpine
+    container_name: go-socket-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - go-socket-network
+
+  # PostgreSQL - Persistência de mensagens
+  postgres:
+    image: postgres:16-alpine
+    container_name: go-socket-postgres
+    environment:
+      POSTGRES_DB: gosocket
+      POSTGRES_USER: gosocket
+      POSTGRES_PASSWORD: gosocket123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gosocket"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - go-socket-network
+
+  # Nginx - Load balancer para múltiplas instâncias
+  nginx:
+    image: nginx:alpine
+    container_name: go-socket-nginx
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - server-1
+      - server-2
+      - server-3
+    networks:
+      - go-socket-network
+
+  # Servidor Go - Instância 1
+  server-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: go-socket-server-1
+    environment:
+      - REDIS_URL=redis:6379
+      - POSTGRES_URL=postgres://gosocket:gosocket123@postgres:5432/gosocket?sslmode=disable
+      - SERVER_PORT=8081
+      - INSTANCE_ID=server-1
+      - WORKER_ENABLED=false
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - go-socket-network
+
+  # Servidor Go - Instância 2
+  server-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: go-socket-server-2
+    environment:
+      - REDIS_URL=redis:6379
+      - POSTGRES_URL=postgres://gosocket:gosocket123@postgres:5432/gosocket?sslmode=disable
+      - SERVER_PORT=8082
+      - INSTANCE_ID=server-2
+      - WORKER_ENABLED=false
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - go-socket-network
+
+  # Servidor Go - Instância 3
+  server-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: go-socket-server-3
+    environment:
+      - REDIS_URL=redis:6379
+      - POSTGRES_URL=postgres://gosocket:gosocket123@postgres:5432/gosocket?sslmode=disable
+      - SERVER_PORT=8083
+      - INSTANCE_ID=server-3
+      - WORKER_ENABLED=false
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - go-socket-network
+
+  # Worker dedicado - Consome Redis Streams e grava no Postgres
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: go-socket-worker
+    command: ["/app/worker"]
+    environment:
+      - REDIS_URL=redis:6379
+      - POSTGRES_URL=postgres://gosocket:gosocket123@postgres:5432/gosocket?sslmode=disable
+      - WORKER_ENABLED=true
+      - WORKER_ID=worker-1
+      - BATCH_SIZE=100
+      - BATCH_TIMEOUT=5s
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - go-socket-network
+
+volumes:
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+
+networks:
+  go-socket-network:
+    driver: bridge
