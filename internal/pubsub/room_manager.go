@@ -323,3 +323,126 @@ func (rm *RoomManager) GetRoomStats(roomName string) map[string]interface{} {
 
 	return room.GetMetadata()
 }
+
+// BroadcastTyping envia indicador de digitação para todos na sala
+func (rm *RoomManager) BroadcastTyping(client *Client, roomName string, isTyping bool) {
+	room := rm.GetRoom(roomName)
+	if room == nil {
+		log.Printf("Tentativa de enviar typing em sala inexistente: %s", roomName)
+		return
+	}
+
+	// Obtém todos os subscribers (exceto o próprio cliente)
+	subscribers := room.GetSubscribers()
+
+	data, err := json.Marshal(map[string]interface{}{
+		"type":     "typing",
+		"room":     roomName,
+		"user":     client.GetUserInfo(),
+		"isTyping": isTyping,
+	})
+	if err != nil {
+		log.Printf("Erro ao serializar typing event: %v", err)
+		return
+	}
+
+	for _, subscriber := range subscribers {
+		// Não envia para o próprio cliente
+		if subscriber == client {
+			continue
+		}
+
+		select {
+		case subscriber.send <- data:
+		default:
+			log.Printf("Cliente %p não pode receber typing indicator", subscriber)
+		}
+	}
+
+	log.Printf("Typing indicator enviado na sala %s (isTyping: %v)", roomName, isTyping)
+}
+
+// SendReadReceipt envia confirmação de leitura para o remetente
+func (rm *RoomManager) SendReadReceipt(client *Client, roomName string, messageID string) {
+	room := rm.GetRoom(roomName)
+	if room == nil {
+		log.Printf("Tentativa de enviar read receipt em sala inexistente: %s", roomName)
+		return
+	}
+
+	// Broadcast para todos na sala (o remetente vai filtrar)
+	subscribers := room.GetSubscribers()
+
+	data, err := json.Marshal(map[string]interface{}{
+		"type":      "read_receipt",
+		"room":      roomName,
+		"messageId": messageID,
+		"user":      client.GetUserInfo(),
+	})
+	if err != nil {
+		log.Printf("Erro ao serializar read receipt: %v", err)
+		return
+	}
+
+	for _, subscriber := range subscribers {
+		select {
+		case subscriber.send <- data:
+		default:
+			log.Printf("Cliente %p não pode receber read receipt", subscriber)
+		}
+	}
+
+	log.Printf("Read receipt enviado na sala %s para mensagem %s", roomName, messageID)
+}
+
+// SendDirectMessage envia mensagem direta para um usuário específico
+func (rm *RoomManager) SendDirectMessage(sender *Client, toUserID string, payload interface{}) {
+	// Procura o cliente destino em todas as salas
+	rm.mu.RLock()
+	var targetClient *Client
+	for _, room := range rm.rooms {
+		subscribers := room.GetSubscribers()
+		for _, client := range subscribers {
+			if client.GetUserID() == toUserID {
+				targetClient = client
+				break
+			}
+		}
+		if targetClient != nil {
+			break
+		}
+	}
+	rm.mu.RUnlock()
+
+	if targetClient == nil {
+		log.Printf("Usuário destino não encontrado: %s", toUserID)
+		// Envia erro para o remetente
+		errorData, _ := json.Marshal(map[string]interface{}{
+			"type":  "error",
+			"error": "Usuário não encontrado ou offline",
+		})
+		select {
+		case sender.send <- errorData:
+		default:
+		}
+		return
+	}
+
+	// Envia mensagem para o destinatário
+	data, err := json.Marshal(map[string]interface{}{
+		"type":    "direct_message",
+		"payload": payload,
+		"user":    sender.GetUserInfo(),
+	})
+	if err != nil {
+		log.Printf("Erro ao serializar mensagem direta: %v", err)
+		return
+	}
+
+	select {
+	case targetClient.send <- data:
+		log.Printf("Mensagem direta enviada de %s para %s", sender.GetUserID(), toUserID)
+	default:
+		log.Printf("Cliente destino %s não pode receber mensagem", toUserID)
+	}
+}

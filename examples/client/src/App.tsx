@@ -9,18 +9,21 @@ interface User {
 }
 
 interface ClientEvent {
-  type: 'subscribe' | 'unsubscribe' | 'publish' | 'presence'
-  room: string
+  type: 'subscribe' | 'unsubscribe' | 'publish' | 'presence' | 'typing' | 'read_receipt' | 'direct_msg'
+  room?: string
   user?: User
   payload?: any
   options?: {
     history?: boolean
     limit?: number
   }
+  toUserId?: string
+  messageId?: string
+  isTyping?: boolean
 }
 
 interface ServerMessage {
-  type: 'message' | 'history' | 'presence_list' | 'user_joined' | 'user_left'
+  type: 'message' | 'history' | 'presence_list' | 'user_joined' | 'user_left' | 'typing' | 'read_receipt' | 'direct_message' | 'error'
   room?: string
   payload?: {
     message: string
@@ -32,15 +35,19 @@ interface ServerMessage {
     createdAt: string
   }
   presenceList?: User[]
+  isTyping?: boolean
+  messageId?: string
+  error?: string
 }
 
 interface Message {
   id: string
-  type: 'sent' | 'received' | 'system'
+  type: 'sent' | 'received' | 'system' | 'dm'
   text: string
   username?: string
   timestamp: string
   isHistory?: boolean
+  readBy?: string[]
 }
 
 interface Room {
@@ -48,14 +55,15 @@ interface Room {
   name: string
   messages: Message[]
   presence: User[]
+  typingUsers: User[]
 }
 
 // ===== Configuração de Salas =====
 
 const AVAILABLE_ROOMS: Room[] = [
-  { id: 'sala-geral', name: '💬 Geral', messages: [], presence: [] },
-  { id: 'sala-de-jogos', name: '🎮 Jogos', messages: [], presence: [] },
-  { id: 'sala-tech', name: '💻 Tech', messages: [], presence: [] },
+  { id: 'sala-geral', name: '💬 Geral', messages: [], presence: [], typingUsers: [] },
+  { id: 'sala-de-jogos', name: '🎮 Jogos', messages: [], presence: [], typingUsers: [] },
+  { id: 'sala-tech', name: '💻 Tech', messages: [], presence: [], typingUsers: [] },
 ]
 
 function App() {
@@ -66,10 +74,14 @@ function App() {
   const [rooms, setRooms] = useState<Room[]>(AVAILABLE_ROOMS)
   const [activeRoomId, setActiveRoomId] = useState('sala-geral')
   const [inputMessage, setInputMessage] = useState('')
+  const [isReconnecting, setIsReconnecting] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const userIdRef = useRef<string>('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectAttemptsRef = useRef(0)
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ===== Helpers =====
 
@@ -85,11 +97,13 @@ function App() {
 
   // ===== WebSocket =====
 
-  useEffect(() => {
+  const connectWebSocket = () => {
     if (!isUsernameSet) return
 
-    // Gera ID único
-    userIdRef.current = 'user-' + Math.random().toString(36).substr(2, 9)
+    // Gera ID único na primeira vez
+    if (!userIdRef.current) {
+      userIdRef.current = 'user-' + Math.random().toString(36).substr(2, 9)
+    }
 
     const ws = new WebSocket('ws://localhost:8080/ws')
     wsRef.current = ws
@@ -97,6 +111,8 @@ function App() {
     ws.onopen = () => {
       console.log('✅ Conectado ao servidor WebSocket')
       setIsConnected(true)
+      setIsReconnecting(false)
+      reconnectAttemptsRef.current = 0
 
       // Subscribe em todas as salas com histórico
       AVAILABLE_ROOMS.forEach(room => {
@@ -122,10 +138,48 @@ function App() {
     ws.onclose = () => {
       console.log('🔌 Conexão fechada')
       setIsConnected(false)
+
+      // Tenta reconectar automaticamente
+      if (isUsernameSet) {
+        attemptReconnect()
+      }
+    }
+  }
+
+  const attemptReconnect = () => {
+    const maxAttempts = 5
+    const baseDelay = 2000 // 2 segundos
+
+    if (reconnectAttemptsRef.current >= maxAttempts) {
+      console.log('❌ Número máximo de tentativas de reconexão atingido')
+      setIsReconnecting(false)
+      return
     }
 
+    reconnectAttemptsRef.current++
+    setIsReconnecting(true)
+
+    const delay = baseDelay * reconnectAttemptsRef.current
+    console.log(`🔄 Tentando reconectar em ${delay/1000}s... (tentativa ${reconnectAttemptsRef.current}/${maxAttempts})`)
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      console.log('🔄 Reconectando...')
+      connectWebSocket()
+    }, delay)
+  }
+
+  useEffect(() => {
+    if (!isUsernameSet) return
+
+    connectWebSocket()
+
     return () => {
-      ws.close()
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
+      if (wsRef.current) {
+        wsRef.current.close()
+      }
     }
   }, [isUsernameSet])
 
@@ -186,6 +240,66 @@ function App() {
 
     wsRef.current.send(JSON.stringify(event))
     setInputMessage('')
+
+    // Para de enviar typing indicator
+    sendTypingIndicator(false)
+  }
+
+  const sendTypingIndicator = (isTyping: boolean) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+
+    const event: ClientEvent = {
+      type: 'typing',
+      room: activeRoomId,
+      user: {
+        id: userIdRef.current,
+        name: username
+      },
+      isTyping
+    }
+
+    wsRef.current.send(JSON.stringify(event))
+  }
+
+  const handleInputChange = (value: string) => {
+    setInputMessage(value)
+
+    // Envia typing indicator
+    if (value.length > 0) {
+      sendTypingIndicator(true)
+
+      // Limpa timeout anterior
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+
+      // Para de enviar typing após 3 segundos de inatividade
+      typingTimeoutRef.current = setTimeout(() => {
+        sendTypingIndicator(false)
+      }, 3000)
+    } else {
+      sendTypingIndicator(false)
+    }
+  }
+
+  const sendDirectMessage = (toUserId: string, message: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+
+    const event: ClientEvent = {
+      type: 'direct_msg',
+      toUserId,
+      user: {
+        id: userIdRef.current,
+        name: username
+      },
+      payload: {
+        message,
+        type: 'text'
+      }
+    }
+
+    wsRef.current.send(JSON.stringify(event))
+    console.log(`📤 Mensagem direta enviada para ${toUserId}`)
   }
 
   // ===== Tratamento de Mensagens do Servidor =====
@@ -210,6 +324,23 @@ function App() {
 
       case 'user_left':
         handleUserLeft(data)
+        break
+
+      case 'typing':
+        handleTypingIndicator(data)
+        break
+
+      case 'read_receipt':
+        handleReadReceipt(data)
+        break
+
+      case 'direct_message':
+        handleDirectMessage(data)
+        break
+
+      case 'error':
+        console.error('❌ Erro do servidor:', data.error)
+        alert(data.error)
         break
     }
   }
@@ -303,6 +434,64 @@ function App() {
     }))
   }
 
+  const handleTypingIndicator = (data: ServerMessage) => {
+    if (!data.room || !data.user) return
+
+    setRooms(prev => prev.map(room => {
+      if (room.id !== data.room) return room
+
+      let typingUsers = [...room.typingUsers]
+
+      if (data.isTyping) {
+        // Adiciona usuário à lista de digitando (se não estiver já)
+        if (!typingUsers.some(u => u.id === data.user!.id)) {
+          typingUsers.push(data.user!)
+        }
+      } else {
+        // Remove usuário da lista de digitando
+        typingUsers = typingUsers.filter(u => u.id !== data.user!.id)
+      }
+
+      return {
+        ...room,
+        typingUsers
+      }
+    }))
+  }
+
+  const handleReadReceipt = (data: ServerMessage) => {
+    if (!data.room || !data.messageId || !data.user) return
+
+    setRooms(prev => prev.map(room => {
+      if (room.id !== data.room) return room
+
+      return {
+        ...room,
+        messages: room.messages.map(msg => {
+          if (msg.id === data.messageId) {
+            const readBy = msg.readBy || []
+            if (!readBy.includes(data.user!.id)) {
+              return {
+                ...msg,
+                readBy: [...readBy, data.user!.id]
+              }
+            }
+          }
+          return msg
+        })
+      }
+    }))
+  }
+
+  const handleDirectMessage = (data: ServerMessage) => {
+    if (!data.user || !data.payload) return
+
+    // Mostra notificação
+    const messageText = data.payload.message || ''
+    console.log(`📬 Mensagem direta de ${data.user.name}: ${messageText}`)
+    alert(`📬 Mensagem direta de ${data.user.name}:\n${messageText}`)
+  }
+
   // ===== Event Handlers =====
 
   const handleUsernameSubmit = (e: FormEvent<HTMLFormElement>) => {
@@ -371,9 +560,9 @@ function App() {
             </div>
 
             <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : isReconnecting ? 'bg-yellow-500' : 'bg-red-500'}`}></div>
               <span className="text-sm text-gray-600">
-                {isConnected ? 'Conectado' : 'Desconectado'}
+                {isConnected ? 'Conectado' : isReconnecting ? 'Reconectando...' : 'Desconectado'}
               </span>
             </div>
           </div>
@@ -418,13 +607,29 @@ function App() {
                   activeRoom.presence.map(user => (
                     <div
                       key={user.id}
-                      className="flex items-center gap-2 text-sm text-gray-700"
+                      className="flex items-center justify-between gap-2 text-sm text-gray-700"
                     >
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <span className={user.id === userIdRef.current ? 'font-semibold' : ''}>
-                        {user.name}
-                        {user.id === userIdRef.current && ' (você)'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className={user.id === userIdRef.current ? 'font-semibold' : ''}>
+                          {user.name}
+                          {user.id === userIdRef.current && ' (você)'}
+                        </span>
+                      </div>
+                      {user.id !== userIdRef.current && (
+                        <button
+                          onClick={() => {
+                            const msg = prompt(`Enviar mensagem direta para ${user.name}:`)
+                            if (msg && msg.trim()) {
+                              sendDirectMessage(user.id, msg.trim())
+                            }
+                          }}
+                          className="text-purple-600 hover:text-purple-800 text-xs"
+                          title="Enviar mensagem direta"
+                        >
+                          💬
+                        </button>
+                      )}
                     </div>
                   ))
                 )}
@@ -440,6 +645,11 @@ function App() {
               <p className="text-sm text-gray-600">
                 {activeRoom.presence.length} {activeRoom.presence.length === 1 ? 'pessoa' : 'pessoas'} online
               </p>
+              {activeRoom.typingUsers.length > 0 && (
+                <p className="text-xs text-purple-600 italic mt-1">
+                  {activeRoom.typingUsers.map(u => u.name).join(', ')} {activeRoom.typingUsers.length === 1 ? 'está' : 'estão'} digitando...
+                </p>
+              )}
             </div>
 
             {/* Messages */}
@@ -484,6 +694,9 @@ function App() {
                             histórico
                           </span>
                         )}
+                        {msg.type === 'sent' && msg.readBy && msg.readBy.length > 0 && (
+                          <span className="text-xs">✓✓</span>
+                        )}
                       </p>
                     </div>
                   )}
@@ -498,7 +711,7 @@ function App() {
                 <input
                   type="text"
                   value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
+                  onChange={(e) => handleInputChange(e.target.value)}
                   placeholder={`Mensagem em ${activeRoom.name}...`}
                   disabled={!isConnected}
                   className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-600 focus:border-transparent outline-none transition disabled:bg-gray-100 disabled:cursor-not-allowed"

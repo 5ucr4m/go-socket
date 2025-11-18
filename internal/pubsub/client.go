@@ -66,6 +66,23 @@ func (c *Client) SetUserInfo(userInfo map[string]interface{}) {
 	c.userInfo = userInfo
 }
 
+// GetUserInfo retorna as informações do usuário
+func (c *Client) GetUserInfo() map[string]interface{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.userInfo
+}
+
+// GetUserID retorna o ID do usuário
+func (c *Client) GetUserID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if id, ok := c.userInfo["id"].(string); ok {
+		return id
+	}
+	return ""
+}
+
 // ReadPump lê mensagens do WebSocket e as envia para o hub (método público)
 func (c *Client) ReadPump() {
 	c.readPump()
@@ -167,6 +184,18 @@ func (c *Client) handleEvent(event *ClientEvent) {
 
 	case EventPresence:
 		c.hub.roomManager.AddPresence(c, event.Room)
+
+	case EventTyping:
+		// Broadcast typing indicator para todos na sala
+		c.hub.roomManager.BroadcastTyping(c, event.Room, event.IsTyping)
+
+	case EventReadReceipt:
+		// Envia confirmação de leitura para o remetente
+		c.hub.roomManager.SendReadReceipt(c, event.Room, event.MessageID)
+
+	case EventDirectMsg:
+		// Envia mensagem direta para usuário específico
+		c.hub.roomManager.SendDirectMessage(c, event.ToUserID, event.Payload)
 
 	default:
 		log.Printf("Tipo de evento desconhecido: %s", event.Type)
