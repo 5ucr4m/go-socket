@@ -17,32 +17,92 @@ Este é um projeto educacional para aprender Go Lang através da construção de
 
 ```
 go-socket/
-├── cmd/server/          # Aplicação principal
-├── internal/pubsub/     # Lógica interna do pub-sub
-├── pkg/gosocket/        # Biblioteca pública
-└── examples/            # Exemplos de uso
+├── cmd/server/              # Servidor HTTP + WebSocket
+│   └── main.go
+├── internal/pubsub/         # Lógica do sistema Pub-Sub
+│   ├── hub.go              # Gerenciador de conexões
+│   └── client.go           # Cliente WebSocket
+├── examples/client/         # Cliente React de exemplo
+│   ├── src/
+│   │   ├── App.jsx         # Interface de chat
+│   │   └── index.css       # Estilos Tailwind
+│   ├── package.json
+│   └── tailwind.config.js
+└── pkg/gosocket/           # Biblioteca pública (futuro)
 ```
 
 ## 🚀 Como Executar
 
+### Servidor Go
 ```bash
-# Instalar dependências
-go mod download
-
-# Executar o servidor
+# Opção 1: Executar diretamente
 go run cmd/server/main.go
+
+# Opção 2: Compilar e executar
+go build -o bin/server ./cmd/server
+./bin/server
 ```
+
+Servidor disponível em:
+- **HTTP:** http://localhost:8080
+- **WebSocket:** ws://localhost:8080/ws
+
+### Cliente React
+```bash
+cd examples/client
+npm install
+npm run dev
+```
+
+Cliente disponível em: http://localhost:5173
+
+📖 **Documentação completa:** Veja [USAGE.md](USAGE.md) para instruções detalhadas.
 
 ## 📖 Aprendizado
 
-Este projeto será desenvolvido em etapas, cada uma focando em conceitos específicos de Go:
+Este projeto foi desenvolvido em etapas, cada uma focando em conceitos específicos de Go:
 
 1. ✅ Inicialização do projeto e estrutura
-2. Tipos básicos e structs
-3. Goroutines e channels
-4. WebSockets
-5. Sistema Pub-Sub
-6. Multiplexação de eventos
+2. ✅ Tipos básicos e structs (Client, Hub)
+3. ✅ Goroutines e channels (readPump, writePump, broadcast)
+4. ✅ WebSockets (gorilla/websocket)
+5. ✅ Sistema Pub-Sub básico (broadcast para todos os clientes)
+6. 🚧 Multiplexação de eventos (próxima etapa)
+
+## 🎨 Funcionalidades Implementadas
+
+### Servidor Go
+- ✅ Servidor HTTP com endpoint WebSocket
+- ✅ Hub central para gerenciar conexões
+- ✅ Sistema de broadcast em tempo real
+- ✅ Goroutines dedicadas por cliente (leitura e escrita)
+- ✅ Ping/Pong automático para keep-alive
+- ✅ Tratamento de desconexões
+
+### Cliente React
+- ✅ Interface de chat moderna com Tailwind CSS
+- ✅ Conexão WebSocket nativa (sem bibliotecas)
+- ✅ Indicador de status de conexão
+- ✅ Sistema de mensagens em tempo real
+- ✅ Auto-scroll para novas mensagens
+- ✅ Timestamps
+- ✅ Tela de login com username
+
+## 🔌 Como Funciona o WebSocket em Go
+
+O projeto demonstra os conceitos fundamentais de WebSocket em Go:
+
+1. **Goroutines**: Cada cliente tem 2 goroutines dedicadas (leitura e escrita)
+2. **Channels**: Comunicação type-safe entre goroutines
+3. **Hub Pattern**: Gerenciador central usando `select` para multiplexar canais
+4. **Broadcast**: Mensagens são enviadas para todos os clientes conectados
+
+### Fluxo de Conexão
+```
+Cliente → HTTP Request → Upgrade para WebSocket →
+Hub registra cliente → Goroutines iniciadas →
+Mensagens fluem através de channels → Broadcast para todos
+```
 
 ## 📝 Licença
 
