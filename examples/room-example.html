@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exemplo - Sistema de Rooms</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .room {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .messages {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 10px 0;
+            background: #fafafa;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+            border-left: 3px solid #007bff;
+        }
+        .presence {
+            height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 10px 0;
+            background: #f0f8ff;
+        }
+        .user {
+            display: inline-block;
+            margin: 5px;
+            padding: 5px 10px;
+            background: #28a745;
+            color: white;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        input {
+            width: calc(100% - 22px);
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .info {
+            background: #e7f3ff;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+        h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        h3 {
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎮 Sistema de Rooms - Exemplo Prático</h1>
+
+    <div class="info">
+        <strong>Status:</strong> <span id="status">Desconectado</span> |
+        <strong>Usuário:</strong> <span id="username">-</span>
+    </div>
+
+    <div class="container">
+        <!-- Sala de Jogos -->
+        <div class="room">
+            <h2>🎯 Sala de Jogos</h2>
+
+            <h3>Mensagens</h3>
+            <div id="games-messages" class="messages"></div>
+
+            <input type="text" id="games-input" placeholder="Digite sua mensagem...">
+            <button onclick="sendMessage('sala-de-jogos')">Enviar</button>
+
+            <h3>Usuários Online (Presence)</h3>
+            <div id="games-presence" class="presence"></div>
+        </div>
+
+        <!-- Sala Geral -->
+        <div class="room">
+            <h2>💬 Sala Geral</h2>
+
+            <h3>Mensagens</h3>
+            <div id="general-messages" class="messages"></div>
+
+            <input type="text" id="general-input" placeholder="Digite sua mensagem...">
+            <button onclick="sendMessage('sala-geral')">Enviar</button>
+
+            <h3>Usuários Online (Presence)</h3>
+            <div id="general-presence" class="presence"></div>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        let userId = 'user-' + Math.random().toString(36).substr(2, 9);
+        let userName = 'Usuário ' + Math.floor(Math.random() * 1000);
+
+        // Conecta ao WebSocket
+        function connect() {
+            ws = new WebSocket('ws://localhost:8080/ws');
+
+            ws.onopen = () => {
+                console.log('✅ Conectado ao servidor');
+                document.getElementById('status').textContent = 'Conectado';
+                document.getElementById('status').style.color = 'green';
+                document.getElementById('username').textContent = userName;
+
+                // Subscribe nas duas salas com histórico
+                subscribeToRoom('sala-de-jogos', true, 50);
+                subscribeToRoom('sala-geral', true, 100);
+
+                // Ativa presence nas duas salas
+                enablePresence('sala-de-jogos');
+                enablePresence('sala-geral');
+            };
+
+            ws.onmessage = (event) => {
+                console.log('📨 Mensagem recebida:', event.data);
+                const data = JSON.parse(event.data);
+                handleMessage(data);
+            };
+
+            ws.onclose = () => {
+                console.log('❌ Desconectado');
+                document.getElementById('status').textContent = 'Desconectado';
+                document.getElementById('status').style.color = 'red';
+
+                // Reconecta após 3 segundos
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('❌ Erro:', error);
+            };
+        }
+
+        // Subscribe em uma sala
+        function subscribeToRoom(roomName, history = false, limit = 0) {
+            const message = {
+                type: 'subscribe',
+                room: roomName,
+                user: {
+                    id: userId,
+                    name: userName
+                },
+                options: {
+                    history: history,
+                    limit: limit
+                }
+            };
+
+            ws.send(JSON.stringify(message));
+            console.log(`📥 Subscribe: ${roomName} (history: ${history}, limit: ${limit})`);
+        }
+
+        // Ativa presence em uma sala
+        function enablePresence(roomName) {
+            const message = {
+                type: 'presence',
+                room: roomName,
+                user: {
+                    id: userId,
+                    name: userName
+                }
+            };
+
+            ws.send(JSON.stringify(message));
+            console.log(`👥 Presence ativado: ${roomName}`);
+        }
+
+        // Envia mensagem para uma sala
+        function sendMessage(roomName) {
+            const inputId = roomName === 'sala-de-jogos' ? 'games-input' : 'general-input';
+            const input = document.getElementById(inputId);
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            const payload = {
+                type: 'publish',
+                room: roomName,
+                user: {
+                    id: userId,
+                    name: userName
+                },
+                payload: {
+                    message: message,
+                    type: 'text'
+                }
+            };
+
+            ws.send(JSON.stringify(payload));
+            console.log(`📤 Mensagem enviada para ${roomName}:`, message);
+
+            input.value = '';
+        }
+
+        // Processa mensagens recebidas
+        function handleMessage(data) {
+            switch(data.type) {
+                case 'message':
+                    displayMessage(data);
+                    break;
+
+                case 'history':
+                    displayMessage(data, true);
+                    break;
+
+                case 'presence_list':
+                    updatePresenceList(data.room, data.presenceList);
+                    break;
+
+                case 'user_joined':
+                    handleUserJoined(data.room, data.user);
+                    break;
+
+                case 'user_left':
+                    handleUserLeft(data.room, data.user);
+                    break;
+            }
+        }
+
+        // Exibe mensagem no chat
+        function displayMessage(data, isHistory = false) {
+            const room = data.metadata?.room;
+            if (!room) return;
+
+            const messagesId = room === 'sala-de-jogos' ? 'games-messages' : 'general-messages';
+            const messagesDiv = document.getElementById(messagesId);
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+
+            const userName = data.user?.name || 'Anônimo';
+            const messageText = data.payload?.message || data.payload;
+            const time = new Date(data.metadata?.createdAt).toLocaleTimeString('pt-BR');
+
+            messageDiv.innerHTML = `
+                <strong>${userName}</strong> <small>(${time})</small><br>
+                ${messageText}
+                ${isHistory ? ' <small style="color: #999;">[histórico]</small>' : ''}
+            `;
+
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Atualiza lista de presença
+        function updatePresenceList(room, presenceList) {
+            const presenceId = room === 'sala-de-jogos' ? 'games-presence' : 'general-presence';
+            const presenceDiv = document.getElementById(presenceId);
+
+            presenceDiv.innerHTML = '';
+
+            if (!presenceList || presenceList.length === 0) {
+                presenceDiv.innerHTML = '<small style="color: #999;">Nenhum usuário online</small>';
+                return;
+            }
+
+            presenceList.forEach(user => {
+                const userSpan = document.createElement('span');
+                userSpan.className = 'user';
+                userSpan.textContent = user.name || 'Anônimo';
+                presenceDiv.appendChild(userSpan);
+            });
+        }
+
+        // Usuário entrou
+        function handleUserJoined(room, user) {
+            console.log(`✅ ${user.name} entrou em ${room}`);
+
+            const messagesId = room === 'sala-de-jogos' ? 'games-messages' : 'general-messages';
+            const messagesDiv = document.getElementById(messagesId);
+
+            const systemMsg = document.createElement('div');
+            systemMsg.style.cssText = 'color: #28a745; font-style: italic; padding: 5px;';
+            systemMsg.textContent = `✅ ${user.name} entrou na sala`;
+            messagesDiv.appendChild(systemMsg);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Usuário saiu
+        function handleUserLeft(room, user) {
+            console.log(`❌ ${user.name} saiu de ${room}`);
+
+            const messagesId = room === 'sala-de-jogos' ? 'games-messages' : 'general-messages';
+            const messagesDiv = document.getElementById(messagesId);
+
+            const systemMsg = document.createElement('div');
+            systemMsg.style.cssText = 'color: #dc3545; font-style: italic; padding: 5px;';
+            systemMsg.textContent = `❌ ${user.name} saiu da sala`;
+            messagesDiv.appendChild(systemMsg);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Enter para enviar
+        document.getElementById('games-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage('sala-de-jogos');
+        });
+
+        document.getElementById('general-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage('sala-geral');
+        });
+
+        // Conecta ao carregar a página
+        connect();
+    </script>
+</body>
+</html>
