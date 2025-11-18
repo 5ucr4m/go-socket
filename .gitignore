@@ -36,3 +36,8 @@ examples/client/.env.local
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Binários compilados
+server
+worker
+*.exe

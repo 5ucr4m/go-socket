@@ -12,49 +12,78 @@ Este é um projeto educacional para aprender Go Lang através da construção de
 - Implementar comunicação em tempo real via WebSockets
 - Entender o padrão Pub-Sub
 - Construir uma API similar ao Socket.IO
+- **Escalar horizontalmente** com Redis Pub/Sub e Streams
 
 ## 📁 Estrutura do Projeto
 
 ```
 go-socket/
-├── cmd/server/              # Servidor HTTP + WebSocket
-│   └── main.go
-├── internal/pubsub/         # Lógica do sistema Pub-Sub
-│   ├── hub.go              # Gerenciador de conexões
-│   └── client.go           # Cliente WebSocket
+├── cmd/
+│   ├── server/              # Servidor HTTP + WebSocket
+│   │   └── main.go
+│   └── worker/              # Worker de persistência
+│       └── main.go
+├── internal/
+│   ├── pubsub/              # Lógica do sistema Pub-Sub
+│   │   ├── hub.go           # Gerenciador de conexões
+│   │   ├── client.go        # Cliente WebSocket
+│   │   └── room_manager.go # Gerenciador de salas
+│   ├── redis/               # Redis Pub/Sub e Streams
+│   │   ├── pubsub.go        # Sincronização entre instâncias
+│   │   ├── streams.go       # Producer para fila de persistência
+│   │   └── consumer.go      # Consumer group worker
+│   ├── persistence/         # Camada de persistência
+│   │   └── repository.go    # PostgreSQL repository
+│   └── config/              # Configurações
+│       └── config.go
 ├── examples/client/         # Cliente React de exemplo
 │   ├── src/
-│   │   ├── App.jsx         # Interface de chat
-│   │   └── index.css       # Estilos Tailwind
+│   │   ├── App.jsx          # Interface de chat
+│   │   └── index.css        # Estilos Tailwind
 │   ├── package.json
 │   └── tailwind.config.js
-└── pkg/gosocket/           # Biblioteca pública (futuro)
+├── migrations/              # Schemas SQL
+│   └── init.sql
+├── docker-compose.yml       # Orquestração completa
+├── Dockerfile               # Multi-stage build
+└── SCALING.md              # Documentação de escalabilidade
 ```
 
 ## 🚀 Como Executar
 
-### Servidor Go
-```bash
-# Opção 1: Executar diretamente
-go run cmd/server/main.go
+### 🐳 Com Docker (Recomendado - Múltiplas Instâncias)
 
-# Opção 2: Compilar e executar
-go build -o bin/server ./cmd/server
-./bin/server
+```bash
+# Subir toda a infraestrutura (3 servidores + worker + Redis + PostgreSQL + Nginx)
+docker-compose up --build
+
+# Acessar
+http://localhost:8080  # Load balancer (Nginx)
 ```
 
-Servidor disponível em:
-- **HTTP:** http://localhost:8080
-- **WebSocket:** ws://localhost:8080/ws
+Isso inicia:
+- **3 instâncias** do servidor Go (portas 8081, 8082, 8083)
+- **1 worker** de persistência
+- **Redis** (Pub/Sub + Streams)
+- **PostgreSQL** (armazenamento)
+- **Nginx** (load balancer na porta 8080)
 
-### Cliente React
+📖 **Ver [SCALING.md](SCALING.md)** para detalhes sobre escalabilidade horizontal
+
+### 💻 Desenvolvimento Local (Modo Single Instance)
+
 ```bash
+# Servidor Go
+go run cmd/server/main.go
+
+# Cliente React
 cd examples/client
 npm install
 npm run dev
 ```
 
-Cliente disponível em: http://localhost:5173
+Servidor: http://localhost:8080
+Cliente: http://localhost:5173
 
 📖 **Documentação completa:** Veja [USAGE.md](USAGE.md) para instruções detalhadas.
 
@@ -67,7 +96,9 @@ Este projeto foi desenvolvido em etapas, cada uma focando em conceitos específi
 3. ✅ Goroutines e channels (readPump, writePump, broadcast)
 4. ✅ WebSockets (gorilla/websocket)
 5. ✅ Sistema Pub-Sub básico (broadcast para todos os clientes)
-6. 🚧 Multiplexação de eventos (próxima etapa)
+6. ✅ Sistema de Rooms com Pub/Sub e Presence
+7. ✅ **Escalabilidade horizontal** (Redis Pub/Sub + Streams)
+8. ✅ **Persistência assíncrona** (PostgreSQL com batch insert)
 
 ## 🎨 Funcionalidades Implementadas
 
@@ -78,6 +109,11 @@ Este projeto foi desenvolvido em etapas, cada uma focando em conceitos específi
 - ✅ Goroutines dedicadas por cliente (leitura e escrita)
 - ✅ Ping/Pong automático para keep-alive
 - ✅ Tratamento de desconexões
+- ✅ **Sistema de Rooms** (pub/sub por sala, presence tracking)
+- ✅ **Escalabilidade horizontal** (múltiplas instâncias sincronizadas)
+- ✅ **Persistência de mensagens** (PostgreSQL com batch insert)
+- ✅ **Redis Pub/Sub** (sincronização entre instâncias)
+- ✅ **Redis Streams** (fila de persistência com Consumer Groups)
 
 ### Cliente React
 - ✅ Interface de chat moderna com Tailwind CSS

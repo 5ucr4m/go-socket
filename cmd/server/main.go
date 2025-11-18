@@ -1,9 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
+	"github.com/5ucr4m/go-socket/internal/config"
 	"github.com/5ucr4m/go-socket/internal/pubsub"
 	"github.com/gorilla/websocket"
 )
@@ -38,8 +43,32 @@ func serveWs(hub *pubsub.Hub, w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// Cria e inicia o Hub
-	hub := pubsub.NewHub()
+	log.Println("🚀 Go-Socket Server iniciando...")
+
+	// Carrega configurações
+	cfg := config.Load()
+
+	log.Printf("📋 Configurações:")
+	log.Printf("   - Instance ID: %s", cfg.InstanceID)
+	log.Printf("   - Server Port: %s", cfg.ServerPort)
+	log.Printf("   - Redis URL: %s", cfg.RedisURL)
+
+	// Cria e inicia o Hub com Redis
+	var hub *pubsub.Hub
+	var err error
+
+	if cfg.RedisURL != "" {
+		log.Println("📡 Inicializando Hub com Redis...")
+		hub, err = pubsub.NewHubWithRedis(cfg.RedisURL, cfg.InstanceID)
+		if err != nil {
+			log.Fatalf("❌ Erro ao criar Hub com Redis: %v", err)
+		}
+		defer hub.Close()
+	} else {
+		log.Println("⚠️  Redis não configurado, usando Hub local (sem escalabilidade)")
+		hub = pubsub.NewHub()
+	}
+
 	go hub.Run()
 
 	// Configura rotas
@@ -50,15 +79,30 @@ func main() {
 	// Rota de health check
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		w.Write([]byte(fmt.Sprintf("OK - Instance: %s", cfg.InstanceID)))
 	})
 
 	// Servir arquivos estáticos (para o cliente React)
 	fs := http.FileServer(http.Dir("./examples/client/dist"))
 	http.Handle("/", fs)
 
-	addr := ":8080"
-	log.Printf("🚀 Servidor WebSocket iniciado em http://localhost%s", addr)
+	addr := ":" + cfg.ServerPort
+	log.Printf("✅ Servidor WebSocket pronto em http://localhost%s", addr)
 	log.Printf("📡 Endpoint WebSocket: ws://localhost%s/ws", addr)
-	log.Fatal(http.ListenAndServe(addr, nil))
+
+	// Inicia servidor em goroutine
+	server := &http.Server{Addr: addr}
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("❌ Erro ao iniciar servidor: %v", err)
+		}
+	}()
+
+	// Aguarda sinal de interrupção
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	<-sigChan
+	log.Println("🛑 Sinal de shutdown recebido, finalizando...")
+	log.Println("👋 Servidor finalizado")
 }
