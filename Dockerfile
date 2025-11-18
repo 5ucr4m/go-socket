@@ -21,6 +21,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/serv
 # Build do worker
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o worker ./cmd/worker
 
+# Cria diretório para frontend build (se não existir)
+RUN mkdir -p /build/examples/client/dist
+
 # Stage 2: Runtime
 FROM alpine:latest
 
@@ -32,8 +35,8 @@ WORKDIR /app
 COPY --from=builder /build/server .
 COPY --from=builder /build/worker .
 
-# Copia arquivos estáticos se existirem
-COPY --from=builder /build/examples/client/dist ./examples/client/dist 2>/dev/null || true
+# Copia arquivos estáticos do frontend (apenas dist)
+COPY --from=builder /build/examples/client/dist ./examples/client/dist
 
 # Expõe a porta do servidor (configurável via env)
 EXPOSE 8080
