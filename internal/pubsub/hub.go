@@ -15,15 +15,19 @@ type Hub struct {
 
 	// Remover clientes desconectados
 	unregister chan *Client
+
+	// Gerenciador de salas
+	roomManager *RoomManager
 }
 
 // NewHub cria uma nova instância do Hub
 func NewHub() *Hub {
 	return &Hub{
-		broadcast:  make(chan *Message),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		clients:    make(map[*Client]bool),
+		broadcast:   make(chan *Message),
+		register:    make(chan *Client),
+		unregister:  make(chan *Client),
+		clients:     make(map[*Client]bool),
+		roomManager: NewRoomManager(1000), // Histórico padrão de 1000 mensagens
 	}
 }
 
