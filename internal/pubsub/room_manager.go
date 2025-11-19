@@ -222,11 +222,12 @@ func (rm *RoomManager) RemoveClientFromAllRooms(client *Client) {
 func (rm *RoomManager) sendHistoryToClient(client *Client, roomName string, history []*RoomMessage) {
 	for _, msg := range history {
 		data, err := json.Marshal(map[string]interface{}{
-			"type":    "history",
-			"room":    roomName,
-			"payload": msg.Payload,
-			"user":    msg.User,
-			"metadata": msg.Metadata,
+			"type":      "history",
+			"room":      roomName,
+			"messageId": msg.ID,
+			"payload":   msg.Payload,
+			"user":      msg.User,
+			"metadata":  msg.Metadata,
 		})
 		if err != nil {
 			log.Printf("Erro ao serializar histórico: %v", err)
@@ -295,10 +296,11 @@ func (rm *RoomManager) notifyPresenceEvent(room *Room, eventType string, userInf
 // broadcastToClients envia mensagem para uma lista de clientes
 func (rm *RoomManager) broadcastToClients(clients []*Client, msg *RoomMessage) {
 	data, err := json.Marshal(map[string]interface{}{
-		"type":     "message",
-		"payload":  msg.Payload,
-		"user":     msg.User,
-		"metadata": msg.Metadata,
+		"type":      "message",
+		"messageId": msg.ID,
+		"payload":   msg.Payload,
+		"user":      msg.User,
+		"metadata":  msg.Metadata,
 	})
 	if err != nil {
 		log.Printf("Erro ao serializar mensagem: %v", err)
@@ -445,4 +447,71 @@ func (rm *RoomManager) SendDirectMessage(sender *Client, toUserID string, payloa
 	default:
 		log.Printf("Cliente destino %s não pode receber mensagem", toUserID)
 	}
+}
+
+// EditMessage edita uma mensagem existente em uma sala
+func (rm *RoomManager) EditMessage(client *Client, roomName string, messageID string, newPayload interface{}) error {
+	room := rm.GetRoom(roomName)
+	if room == nil {
+		log.Printf("Tentativa de editar mensagem em sala inexistente: %s", roomName)
+		// Envia erro para o cliente
+		errorData, _ := json.Marshal(map[string]interface{}{
+			"type":  "error",
+			"error": "Sala não encontrada",
+		})
+		select {
+		case client.send <- errorData:
+		default:
+		}
+		return nil
+	}
+
+	// Tenta editar a mensagem
+	editedMsg, found := room.EditMessage(messageID, newPayload)
+	if !found {
+		log.Printf("Mensagem não encontrada para edição: %s", messageID)
+		// Envia erro para o cliente
+		errorData, _ := json.Marshal(map[string]interface{}{
+			"type":  "error",
+			"error": "Mensagem não encontrada",
+		})
+		select {
+		case client.send <- errorData:
+		default:
+		}
+		return nil
+	}
+
+	// Broadcast da mensagem editada para todos os subscribers
+	subscribers := room.GetSubscribers()
+
+	data, err := json.Marshal(map[string]interface{}{
+		"type":      "message_edited",
+		"room":      roomName,
+		"messageId": messageID,
+		"payload":   editedMsg.Payload,
+		"user":      editedMsg.User,
+		"metadata": map[string]interface{}{
+			"room":      roomName,
+			"createdAt": editedMsg.CreatedAt,
+			"editedAt":  editedMsg.EditedAt,
+			"isEdited":  editedMsg.IsEdited,
+		},
+	})
+	if err != nil {
+		log.Printf("Erro ao serializar mensagem editada: %v", err)
+		return err
+	}
+
+	for _, subscriber := range subscribers {
+		select {
+		case subscriber.send <- data:
+		default:
+			log.Printf("Cliente %p não pode receber mensagem editada", subscriber)
+		}
+	}
+
+	log.Printf("Mensagem %s editada na sala %s por %s", messageID, roomName, client.GetUserID())
+
+	return nil
 }

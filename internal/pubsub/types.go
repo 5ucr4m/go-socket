@@ -11,6 +11,7 @@ const (
 	EventTyping      EventType = "typing"       // Indicador de digitação
 	EventReadReceipt EventType = "read_receipt" // Confirmação de leitura
 	EventDirectMsg   EventType = "direct_msg"   // Mensagem direta
+	EventEditMessage EventType = "edit_message" // Edição de mensagem
 )
 
 // ClientEvent representa um evento recebido do cliente

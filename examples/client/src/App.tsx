@@ -9,7 +9,7 @@ interface User {
 }
 
 interface ClientEvent {
-  type: 'subscribe' | 'unsubscribe' | 'publish' | 'presence' | 'typing' | 'read_receipt' | 'direct_msg'
+  type: 'subscribe' | 'unsubscribe' | 'publish' | 'presence' | 'typing' | 'read_receipt' | 'direct_msg' | 'edit_message'
   room?: string
   user?: User
   payload?: any
@@ -23,7 +23,7 @@ interface ClientEvent {
 }
 
 interface ServerMessage {
-  type: 'message' | 'history' | 'presence_list' | 'user_joined' | 'user_left' | 'typing' | 'read_receipt' | 'direct_message' | 'error'
+  type: 'message' | 'history' | 'presence_list' | 'user_joined' | 'user_left' | 'typing' | 'read_receipt' | 'direct_message' | 'message_edited' | 'error'
   room?: string
   payload?: {
     message: string
@@ -33,6 +33,8 @@ interface ServerMessage {
   metadata?: {
     room: string
     createdAt: string
+    editedAt?: string
+    isEdited?: boolean
   }
   presenceList?: User[]
   isTyping?: boolean
@@ -48,6 +50,8 @@ interface Message {
   timestamp: string
   isHistory?: boolean
   readBy?: string[]
+  isEdited?: boolean
+  editedAt?: string
 }
 
 interface Room {
@@ -75,6 +79,7 @@ function App() {
   const [activeRoomId, setActiveRoomId] = useState('sala-geral')
   const [inputMessage, setInputMessage] = useState('')
   const [isReconnecting, setIsReconnecting] = useState(false)
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
   const userIdRef = useRef<string>('')
@@ -302,6 +307,27 @@ function App() {
     console.log(`📤 Mensagem direta enviada para ${toUserId}`)
   }
 
+  const editMessage = (messageId: string, newText: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
+
+    const event: ClientEvent = {
+      type: 'edit_message',
+      room: activeRoomId,
+      messageId,
+      user: {
+        id: userIdRef.current,
+        name: username
+      },
+      payload: {
+        message: newText,
+        type: 'text'
+      }
+    }
+
+    wsRef.current.send(JSON.stringify(event))
+    console.log(`✏️ Editando mensagem ${messageId}`)
+  }
+
   // ===== Tratamento de Mensagens do Servidor =====
 
   const handleServerMessage = (data: ServerMessage) => {
@@ -338,6 +364,10 @@ function App() {
         handleDirectMessage(data)
         break
 
+      case 'message_edited':
+        handleMessageEdited(data)
+        break
+
       case 'error':
         console.error('❌ Erro do servidor:', data.error)
         alert(data.error)
@@ -357,12 +387,14 @@ function App() {
       if (room.id !== roomId) return room
 
       const newMessage: Message = {
-        id: Math.random().toString(36).substr(2, 9),
+        id: data.messageId || Math.random().toString(36).substr(2, 9),
         type: isSentByMe ? 'sent' : 'received',
         text: messageText,
         username: messageSender,
         timestamp: data.metadata?.createdAt || new Date().toISOString(),
-        isHistory
+        isHistory,
+        isEdited: data.metadata?.isEdited || false,
+        editedAt: data.metadata?.editedAt
       }
 
       return {
@@ -490,6 +522,34 @@ function App() {
     const messageText = data.payload.message || ''
     console.log(`📬 Mensagem direta de ${data.user.name}: ${messageText}`)
     alert(`📬 Mensagem direta de ${data.user.name}:\n${messageText}`)
+  }
+
+  const handleMessageEdited = (data: ServerMessage) => {
+    if (!data.room || !data.messageId) return
+
+    const roomId = data.room
+    const messageText = data.payload?.message || ''
+
+    setRooms(prev => prev.map(room => {
+      if (room.id !== roomId) return room
+
+      return {
+        ...room,
+        messages: room.messages.map(msg => {
+          if (msg.id === data.messageId) {
+            return {
+              ...msg,
+              text: messageText,
+              isEdited: true,
+              editedAt: data.metadata?.editedAt || new Date().toISOString()
+            }
+          }
+          return msg
+        })
+      }
+    }))
+
+    console.log(`✏️ Mensagem ${data.messageId} editada na sala ${roomId}`)
   }
 
   // ===== Event Handlers =====
@@ -671,33 +731,83 @@ function App() {
                       {msg.text}
                     </div>
                   ) : (
-                    <div
-                      className={`max-w-xs md:max-w-md px-4 py-2 rounded-lg ${
-                        msg.type === 'sent'
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-gray-200 text-gray-800'
-                      }`}
-                    >
-                      {msg.type === 'received' && (
-                        <p className="text-xs font-semibold mb-1 opacity-70">
-                          {msg.username}
+                    <div className="flex flex-col gap-1 max-w-xs md:max-w-md">
+                      <div
+                        className={`px-4 py-2 rounded-lg ${
+                          msg.type === 'sent'
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-200 text-gray-800'
+                        }`}
+                      >
+                        {msg.type === 'received' && (
+                          <p className="text-xs font-semibold mb-1 opacity-70">
+                            {msg.username}
+                          </p>
+                        )}
+
+                        {editingMessageId === msg.id ? (
+                          <div className="flex flex-col gap-2">
+                            <input
+                              type="text"
+                              defaultValue={msg.text}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const newText = e.currentTarget.value.trim()
+                                  if (newText && newText !== msg.text) {
+                                    editMessage(msg.id, newText)
+                                  }
+                                  setEditingMessageId(null)
+                                } else if (e.key === 'Escape') {
+                                  setEditingMessageId(null)
+                                }
+                              }}
+                              autoFocus
+                              className="bg-white text-gray-800 px-2 py-1 rounded text-sm border border-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                            />
+                            <div className="flex gap-2 text-xs">
+                              <button
+                                onClick={() => setEditingMessageId(null)}
+                                className="text-red-300 hover:text-red-100"
+                              >
+                                Cancelar (Esc)
+                              </button>
+                              <span className="opacity-50">Enter para salvar</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm break-words">{msg.text}</p>
+                        )}
+
+                        <p className="text-xs opacity-70 mt-1 flex items-center gap-2">
+                          {new Date(msg.timestamp).toLocaleTimeString('pt-BR', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                          {msg.isEdited && (
+                            <span className="text-xs italic">
+                              (editada)
+                            </span>
+                          )}
+                          {msg.isHistory && (
+                            <span className="text-xs bg-black bg-opacity-20 px-2 py-0.5 rounded">
+                              histórico
+                            </span>
+                          )}
+                          {msg.type === 'sent' && msg.readBy && msg.readBy.length > 0 && (
+                            <span className="text-xs">✓✓</span>
+                          )}
                         </p>
+                      </div>
+
+                      {msg.type === 'sent' && !msg.isHistory && editingMessageId !== msg.id && (
+                        <button
+                          onClick={() => setEditingMessageId(msg.id)}
+                          className="text-xs text-gray-500 hover:text-gray-700 self-end"
+                          title="Editar mensagem"
+                        >
+                          ✏️ Editar
+                        </button>
                       )}
-                      <p className="text-sm break-words">{msg.text}</p>
-                      <p className="text-xs opacity-70 mt-1 flex items-center gap-2">
-                        {new Date(msg.timestamp).toLocaleTimeString('pt-BR', {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                        {msg.isHistory && (
-                          <span className="text-xs bg-black bg-opacity-20 px-2 py-0.5 rounded">
-                            histórico
-                          </span>
-                        )}
-                        {msg.type === 'sent' && msg.readBy && msg.readBy.length > 0 && (
-                          <span className="text-xs">✓✓</span>
-                        )}
-                      </p>
                     </div>
                   )}
                 </div>
