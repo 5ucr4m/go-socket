@@ -1,6 +1,8 @@
 package pubsub
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"sync"
 	"time"
 )
@@ -35,9 +37,13 @@ type Room struct {
 
 // RoomMessage representa uma mensagem armazenada no histórico da sala
 type RoomMessage struct {
-	Payload  interface{}            `json:"payload"`
-	User     map[string]interface{} `json:"user"`
-	Metadata map[string]interface{} `json:"metadata"`
+	ID        string                 `json:"id"`               // ID único da mensagem
+	Payload   interface{}            `json:"payload"`
+	User      map[string]interface{} `json:"user"`
+	Metadata  map[string]interface{} `json:"metadata"`
+	CreatedAt time.Time              `json:"createdAt"`        // Timestamp de criação original
+	EditedAt  *time.Time             `json:"editedAt,omitempty"` // Timestamp da última edição (se houver)
+	IsEdited  bool                   `json:"isEdited"`         // Flag indicando se foi editada
 }
 
 // NewRoom cria uma nova sala
@@ -83,18 +89,35 @@ func (r *Room) RemovePresence(client *Client) {
 	delete(r.presenceClients, client)
 }
 
+// generateMessageID gera um ID único para uma mensagem
+func generateMessageID() string {
+	bytes := make([]byte, 16)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
+}
+
 // AddMessage adiciona uma mensagem ao histórico
 // Implementa um buffer circular se maxHistorySize > 0
 func (r *Room) AddMessage(msg *RoomMessage) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Adiciona timestamp ao metadata se não existir
+	// Gera ID único se não existir
+	if msg.ID == "" {
+		msg.ID = generateMessageID()
+	}
+
+	// Define timestamp de criação se não existir
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = time.Now()
+	}
+
+	// Adiciona metadata
 	if msg.Metadata == nil {
 		msg.Metadata = make(map[string]interface{})
 	}
 	msg.Metadata["room"] = r.name
-	msg.Metadata["createdAt"] = time.Now()
+	msg.Metadata["createdAt"] = msg.CreatedAt
 
 	r.messageHistory = append(r.messageHistory, msg)
 
@@ -103,6 +126,40 @@ func (r *Room) AddMessage(msg *RoomMessage) {
 		// Remove mensagens antigas (buffer circular)
 		r.messageHistory = r.messageHistory[len(r.messageHistory)-r.maxHistorySize:]
 	}
+}
+
+// EditMessage edita uma mensagem existente no histórico
+// Retorna true se a mensagem foi encontrada e editada, false caso contrário
+func (r *Room) EditMessage(messageID string, newPayload interface{}) (*RoomMessage, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Procura a mensagem no histórico
+	for i, msg := range r.messageHistory {
+		if msg.ID == messageID {
+			// Atualiza o payload
+			msg.Payload = newPayload
+
+			// Marca como editada
+			now := time.Now()
+			msg.EditedAt = &now
+			msg.IsEdited = true
+
+			// Atualiza metadata
+			if msg.Metadata == nil {
+				msg.Metadata = make(map[string]interface{})
+			}
+			msg.Metadata["editedAt"] = now
+			msg.Metadata["isEdited"] = true
+
+			// Atualiza no histórico
+			r.messageHistory[i] = msg
+
+			return msg, true
+		}
+	}
+
+	return nil, false
 }
 
 // GetHistory retorna o histórico de mensagens com limite opcional

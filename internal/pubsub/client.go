@@ -197,6 +197,10 @@ func (c *Client) handleEvent(event *ClientEvent) {
 		// Envia mensagem direta para usuário específico
 		c.hub.roomManager.SendDirectMessage(c, event.ToUserID, event.Payload)
 
+	case EventEditMessage:
+		// Edita uma mensagem existente
+		c.hub.roomManager.EditMessage(c, event.Room, event.MessageID, event.Payload)
+
 	default:
 		log.Printf("Tipo de evento desconhecido: %s", event.Type)
 	}
