@@ -8,4 +8,6 @@ export interface Message {
   readBy?: string[]
   isEdited?: boolean
   editedAt?: string
+  isDeleted?: boolean
+  deletedAt?: string
 }

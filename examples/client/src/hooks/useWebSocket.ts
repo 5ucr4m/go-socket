@@ -63,6 +63,12 @@ export const useWebSocket = () => {
     wsService.editMessage(roomId, messageId, { id: userId, name: username }, newText)
   }, [userId, username])
 
+  const deleteMessage = useCallback((roomId: string, messageId: string) => {
+    if (!userId || !username) return
+
+    wsService.deleteMessage(roomId, messageId, { id: userId, name: username })
+  }, [userId, username])
+
   const sendDirectMessage = useCallback((toUserId: string, message: string) => {
     if (!userId || !username) return
 
@@ -99,6 +105,7 @@ export const useWebSocket = () => {
   return {
     sendMessage,
     editMessage,
+    deleteMessage,
     sendDirectMessage,
     sendTypingIndicator,
     handleInputChange,

@@ -1,7 +1,7 @@
 import { User } from './User'
 
 export interface ClientEvent {
-  type: 'subscribe' | 'unsubscribe' | 'publish' | 'presence' | 'typing' | 'read_receipt' | 'direct_msg' | 'edit_message'
+  type: 'subscribe' | 'unsubscribe' | 'publish' | 'presence' | 'typing' | 'read_receipt' | 'direct_msg' | 'edit_message' | 'delete_message'
   room?: string
   user?: User
   payload?: any
@@ -15,7 +15,7 @@ export interface ClientEvent {
 }
 
 export interface ServerMessage {
-  type: 'message' | 'history' | 'presence_list' | 'user_joined' | 'user_left' | 'typing' | 'read_receipt' | 'direct_message' | 'message_edited' | 'error'
+  type: 'message' | 'history' | 'presence_list' | 'user_joined' | 'user_left' | 'typing' | 'read_receipt' | 'direct_message' | 'message_edited' | 'message_deleted' | 'error'
   room?: string
   payload?: {
     message: string
@@ -27,6 +27,7 @@ export interface ServerMessage {
     createdAt: string
     editedAt?: string
     isEdited?: boolean
+    deletedAt?: string
   }
   presenceList?: User[]
   isTyping?: boolean

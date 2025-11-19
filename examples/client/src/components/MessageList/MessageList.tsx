@@ -5,9 +5,10 @@ import { MessageItem } from './MessageItem'
 interface MessageListProps {
   messages: Message[]
   onEditMessage: (messageId: string, newText: string) => void
+  onDeleteMessage?: (messageId: string) => void
 }
 
-export const MessageList = memo(({ messages, onEditMessage }: MessageListProps) => {
+export const MessageList = memo(({ messages, onEditMessage, onDeleteMessage }: MessageListProps) => {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -32,6 +33,7 @@ export const MessageList = memo(({ messages, onEditMessage }: MessageListProps) 
           key={msg.id}
           message={msg}
           onEdit={onEditMessage}
+          onDelete={onDeleteMessage}
         />
       ))}
       <div ref={messagesEndRef} />
