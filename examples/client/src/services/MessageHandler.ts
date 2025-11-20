@@ -41,6 +41,10 @@ export class MessageHandler {
         MessageHandler.handleMessageEdited(data)
         break
 
+      case 'message_deleted':
+        MessageHandler.handleMessageDeleted(data)
+        break
+
       case 'error':
         console.error('❌ Erro do servidor:', data.error)
         alert(`Erro: ${data.error}`)
@@ -180,5 +184,19 @@ export class MessageHandler {
     })
 
     console.log(`✏️ Mensagem ${data.messageId} editada na sala ${data.room}`)
+  }
+
+  private static handleMessageDeleted(data: ServerMessage) {
+    if (!data.room || !data.messageId) return
+
+    const roomStore = useRoomStore.getState()
+
+    roomStore.updateMessage(data.room, data.messageId, {
+      text: 'Esta mensagem foi apagada',
+      isDeleted: true,
+      deletedAt: data.metadata?.deletedAt || new Date().toISOString(),
+    })
+
+    console.log(`🗑️ Mensagem ${data.messageId} apagada na sala ${data.room}`)
   }
 }

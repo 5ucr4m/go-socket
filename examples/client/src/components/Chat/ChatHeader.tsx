@@ -10,46 +10,73 @@ interface ChatHeaderProps {
   roomName: string
 }
 
-export const ChatHeader = memo(({ username, isConnected, isReconnecting, typingUsers, presenceCount, roomName }: ChatHeaderProps) => {
+export const ChatHeader = memo(({ isConnected, isReconnecting, typingUsers, presenceCount, roomName }: ChatHeaderProps) => {
   return (
-    <>
-      {/* Header Principal */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold">
-                {username[0].toUpperCase()}
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-800">Go-Socket Rooms</h1>
-                <p className="text-sm text-gray-600">{username}</p>
-              </div>
-            </div>
+    <header className="bg-[#F0F2F5] border-b border-gray-300 px-4 py-3">
+      <div className="flex items-center justify-between">
+        {/* Left side - Room info */}
+        <div className="flex items-center gap-3">
+          {/* Room avatar */}
+          <div className="avatar">
+            {roomName.charAt(0)}
+          </div>
 
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : isReconnecting ? 'bg-yellow-500' : 'bg-red-500'}`}></div>
-              <span className="text-sm text-gray-600">
-                {isConnected ? 'Conectado' : isReconnecting ? 'Reconectando...' : 'Desconectado'}
-              </span>
-            </div>
+          {/* Room name and status */}
+          <div>
+            <h2 className="text-gray-900 font-medium text-base">
+              {roomName}
+            </h2>
+
+            {/* Typing indicator ou presence count */}
+            {typingUsers.length > 0 ? (
+              <div className="flex items-center gap-1.5 text-xs text-purple-600">
+                <div className="flex gap-0.5">
+                  <span className="typing-dot w-1 h-1 bg-purple-600 rounded-full inline-block"></span>
+                  <span className="typing-dot w-1 h-1 bg-purple-600 rounded-full inline-block"></span>
+                  <span className="typing-dot w-1 h-1 bg-purple-600 rounded-full inline-block"></span>
+                </div>
+                <span className="font-medium">
+                  {typingUsers.map(u => u.name).join(', ')} {typingUsers.length === 1 ? 'está' : 'estão'} digitando...
+                </span>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-600">
+                {presenceCount} {presenceCount === 1 ? 'pessoa' : 'pessoas'} online
+              </p>
+            )}
           </div>
         </div>
-      </header>
 
-      {/* Header da Sala */}
-      <div className="p-4 border-b border-gray-200">
-        <h2 className="text-xl font-bold text-gray-800">{roomName}</h2>
-        <p className="text-sm text-gray-600">
-          {presenceCount} {presenceCount === 1 ? 'pessoa' : 'pessoas'} online
-        </p>
-        {typingUsers.length > 0 && (
-          <p className="text-xs text-purple-600 italic mt-1">
-            {typingUsers.map(u => u.name).join(', ')} {typingUsers.length === 1 ? 'está' : 'estão'} digitando...
-          </p>
-        )}
+        {/* Right side - Actions */}
+        <div className="flex items-center gap-4">
+          {/* Connection status */}
+          <div className="flex items-center gap-2">
+            <span className={`status-indicator ${
+              isReconnecting ? 'status-reconnecting' : isConnected ? 'status-online' : 'status-offline'
+            }`}></span>
+            <span className="text-xs text-gray-600 hidden sm:inline">
+              {isReconnecting ? 'Reconectando...' : isConnected ? 'Conectado' : 'Desconectado'}
+            </span>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 text-gray-600">
+            <button
+              className="p-2 hover:bg-gray-200 rounded-full transition-colors"
+              title="Pesquisar mensagens"
+            >
+              🔍
+            </button>
+            <button
+              className="p-2 hover:bg-gray-200 rounded-full transition-colors"
+              title="Mais opções"
+            >
+              ⋮
+            </button>
+          </div>
+        </div>
       </div>
-    </>
+    </header>
   )
 })
 

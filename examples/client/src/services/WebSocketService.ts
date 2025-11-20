@@ -187,6 +187,15 @@ class WebSocketService {
     })
   }
 
+  deleteMessage(roomId: string, messageId: string, user: User) {
+    return this.send({
+      type: 'delete_message',
+      room: roomId,
+      messageId,
+      user,
+    })
+  }
+
   sendReadReceipt(roomId: string, messageId: string, user: User) {
     return this.send({
       type: 'read_receipt',
